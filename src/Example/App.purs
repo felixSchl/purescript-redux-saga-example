@@ -4,26 +4,26 @@ import Prelude
 import Redux.Saga
 
 import Control.Monad.Aff (delay)
-import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Aff.Class (liftAff)
 import Control.Monad.Aff.Console as Console
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
-import Control.Monad.Eff.Exception (Error, EXCEPTION)
-import Control.Monad.Eff.Ref (REF)
-import Control.Monad.Eff.Unsafe (unsafeCoerceEff)
-import Data.Lens (Lens', Prism', lens, prism', to, view)
+import Control.Monad.Eff.Exception (Error, error)
+import Control.Monad.Rec.Class (forever)
+import Data.Foldable (any, foldl)
+import Data.Functor.Contravariant (cmap)
+import Data.Lens (to)
 import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong (first, second)
+import Data.String as S
 import Data.Time.Duration (Milliseconds(..))
-import Data.Tuple (fst, snd, uncurry)
-import React (preventDefault)
+import React (ReactElement, ReactProps, preventDefault)
 import React as React
 import React.DOM as DOM
 import React.DOM.Props (className)
 import React.DOM.Props as Props
-import React.Redux (REDUX)
 import React.Redux as Redux
+import Unsafe.Coerce (unsafeCoerce)
 
 type GlobalState =
   { isLoggingIn :: Boolean
@@ -35,6 +35,9 @@ data Action
   = LoginRequest { username :: String, password :: String }
   | LoginFailure Error
   | LoginSuccess { username :: String }
+  | LoadDashboardRequest
+  | LoadDashboardSuccess
+  | LoadDashboardFailure Error
 
 saga :: ∀ eff. Saga (console :: CONSOLE | eff) Action GlobalState Unit
 saga = do
@@ -42,7 +45,9 @@ saga = do
     LoginRequest { username, password } -> pure do
       liftAff $ Console.log $ "Logging in as " <> show username
       liftAff $ delay $ 1000.0 # Milliseconds
-      pure unit
+      if username == "admin" && password == "password"
+        then put $ LoginSuccess { username }
+        else put $ LoginFailure $ error "Authentication failed"
     _ -> Nothing
 
 mkStore
@@ -66,28 +71,79 @@ mkStore = Redux.createStore reducer initialState (middlewareEnhancer <<< reduxDe
   reducer = flip go
     where
     go state = case _ of
-      LoginRequest _ -> state { isLoggingIn = true }
-      LoginFailure _ -> state { isLoggingIn = false }
-      LoginSuccess _ -> state { isLoggingIn = false }
+      LoginRequest _ ->
+        state { isLoggingIn = true
+              , loginError = Nothing
+              }
+      LoginFailure e ->
+        state { isLoggingIn = false
+              , loginError = Just e
+              }
+      LoginSuccess { username } ->
+        state { isLoggingIn = false
+              , loggedInAs = Just { username }
+              , loginError = Nothing
+              }
       _ -> state
 
 type LocalState = { username :: String, password :: String }
 
-appClass :: ∀ props. Redux.ReduxReactClass GlobalState props GlobalState
-appClass = Redux.createClass first spec
+appClass :: ∀ props. Redux.ReduxReactClass' _ _
+appClass = Redux.createClass' id $ Redux.spec' render
+
+  where
+  render :: Redux.Render _ _ _ (Eff _) _
+  render dispatch this = do
+    DOM.div [ Props.className "container" ] <<< pure <$> do
+      render' <$> React.getProps this
+
+    where
+    render' :: GlobalState -> ReactElement
+    render' { loggedInAs: Just { username } } = dashboard username
+    render' _ = loginScreen
+
+dashboard :: String -> ReactElement
+dashboard username = Redux.createElement dashboardClass { username } []
+
+type DashboardProps = { username :: String }
+dashboardClass :: ∀ props. Redux.ReduxReactClass props DashboardProps DashboardProps
+dashboardClass = Redux.createClass second $
+  let spec = Redux.spec' render
+   in spec { componentDidMount = componentDidMount }
+
+  where
+  componentDidMount :: Redux.ComponentDidMount _ _ _ (Eff _) _
+  componentDidMount dispatch this = void do
+    dispatch $ pure $ LoadDashboardRequest
+
+  render :: Redux.Render _ _ _ (Eff _) _
+  render dispatch this = do
+    DOM.div [ Props.className "container" ] <<< pure <$> do
+      render' <$> React.getProps this
+
+    where
+    render' { username }
+      = DOM.div []
+          [ DOM.h3 [ Props.className "title is-3 has-text-centered" ]
+              [ DOM.text $ "Welcome back, " <> username <> "!" ]
+          ]
+
+loginScreen :: ReactElement
+loginScreen = Redux.createElement loginScreenClass [] []
+
+loginScreenClass :: ∀ props. Redux.ReduxReactClass GlobalState props GlobalState
+loginScreenClass = Redux.createClass first spec
 
   where
   spec :: Redux.Spec _ _ _ (Eff _) _
-  spec = Redux.spec (\_ _ -> pure { username: "", password: ""}) render
+  spec = Redux.spec (\_ _ -> pure { username: "admin", password: "password"}) render
 
-  render dispatch this = render' <$> React.getProps this
-                                 <*> React.readState this
+  render dispatch this =
+    render' <$> React.getProps this
+            <*> React.readState this
+
     where
-    render' :: GlobalState -> LocalState -> React.ReactElement
-    render' { loggedInAs: Just { username } } _
-      = DOM.div []
-                [ DOM.text $ "Welcome back, " <> username ]
-    render' { isLoggingIn } state =
+    render' { isLoggingIn, loginError } state =
       DOM.form
         [ Props.className "box"
         , Props.onSubmit $ \event -> do
@@ -102,6 +158,9 @@ appClass = Redux.createClass first spec
                       , Props.placeholder "username"
                       , Props.className "input"
                       , Props._type "text"
+                      , Props.onChange \event ->
+                          let text = (unsafeCoerce event).target.value
+                           in React.transformState this (_{ username = text })
                       ] []
           ]
         , DOM.div [ Props.className "field" ] [
@@ -109,19 +168,31 @@ appClass = Redux.createClass first spec
                       , Props.placeholder "password"
                       , Props.className "input"
                       , Props._type "password"
+                      , Props.onChange \event ->
+                          let text = (unsafeCoerce event).target.value
+                           in React.transformState this (_{ password = text })
                       ] []
           ]
         , DOM.div [ Props.className "field" ] $ [
-            DOM.input [ Props.value "login"
-                      , Props._type "submit"
-                      , Props.className "button is-primary"
-                      , Props.disabled isLoggingIn
-                      ] []
-          ] <> if isLoggingIn
-                  then [ DOM.span [ Props.className "fa fa-spinner fa-spin" ] [] ]
-                  else []
+            DOM.button [ Props.value "login"
+                       , Props.className $ "button is-primary "
+                          <> if isLoggingIn
+                              then "is-loading"
+                              else ""
+                       , Props.disabled $ foldl (||) false
+                          [ isLoggingIn
+                          , S.null $ S.trim state.username
+                          , S.null $ S.trim state.password
+                          ]
+                      ] [ DOM.text "Submit" ]
+            ] <> case loginError of
+                  Nothing -> []
+                  Just _ -> pure do
+                    DOM.div [ Props.className "help is-danger" ]
+                      [ DOM.text "Authentication failed. Please try again." ]
         ]
-main :: Eff _ React.ReactElement
+
+main :: Eff _ ReactElement
 main = do
   store <- mkStore
   pure $ Redux.createProviderElement store appClass
