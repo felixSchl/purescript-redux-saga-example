@@ -40,15 +40,24 @@ data Action
   | LoadDashboardFailure Error
 
 saga :: ∀ eff. Saga (console :: CONSOLE | eff) Action GlobalState Unit
-saga = do
-  void $ takeEvery case _ of
-    LoginRequest { username, password } -> pure do
-      liftAff $ Console.log $ "Logging in as " <> show username
-      liftAff $ delay $ 1000.0 # Milliseconds
-      if username == "admin" && password == "password"
-        then put $ LoginSuccess { username }
-        else put $ LoginFailure $ error "Authentication failed"
-    _ -> Nothing
+saga = void do
+  fork loginFlow
+
+  where
+  loginFlow = forever do
+    take case _ of
+      LoginRequest { username, password } -> pure do
+        liftAff $ Console.log $ "Logging in as " <> show username
+        liftAff $ delay $ 1000.0 # Milliseconds
+        if username == "admin" && password == "password"
+          then do
+            put $ LoginSuccess { username }
+            void postLoginFlow
+          else put $ LoginFailure $ error "Authentication failed"
+      _ -> Nothing
+
+  postLoginFlow = do
+    pure unit
 
 mkStore
   :: ∀ eff
