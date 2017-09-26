@@ -8,3 +8,5 @@ node_modules/
 bower_components/
 tmp/
 output/
+*.sw[a-z]
+*.un~
