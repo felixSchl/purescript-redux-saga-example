@@ -1,52 +1,45 @@
 module Example.App (main) where
 
-import Prelude
-import Redux.Saga
-
-import Control.Monad.Aff (delay)
+import Debug.Trace
+import Control.Monad.Aff (delay, attempt)
 import Control.Monad.Aff.Class (liftAff)
 import Control.Monad.Aff.Console as Console
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
-import Control.Monad.Eff.Exception (Error, error)
+import Control.Monad.Eff.Exception (error)
 import Control.Monad.Rec.Class (forever)
-import Data.Foldable (any, foldl)
-import Data.Functor.Contravariant (cmap)
-import Data.Lens (to)
+import Data.Argonaut.Core (Json)
+import Data.Either (Either(Left, Right))
 import Data.Maybe (Maybe(..))
-import Data.Profunctor.Strong (first, second)
-import Data.String as S
 import Data.Time.Duration (Milliseconds(..))
-import React (ReactElement, ReactProps, preventDefault)
+import Example.Screens.Login (login)
+import Example.Screens.Dashboard (dashboard)
+import Network.HTTP.Affjax as Affjax
+import Prelude hiding (div)
+import React (ReactElement, preventDefault)
 import React as React
 import React.DOM as DOM
-import React.DOM.Props (className)
 import React.DOM.Props as Props
 import React.Redux as Redux
-import Unsafe.Coerce (unsafeCoerce)
+import React.Spaces (SpaceM, element, renderIn, text, (!), (^))
+import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span, form, button, code, i)
+import Redux.Saga
 
-type GlobalState =
-  { isLoggingIn :: Boolean
-  , loginError :: Maybe Error
-  , loggedInAs :: Maybe { username :: String }
-  }
-
-data Action
-  = LoginRequest { username :: String, password :: String }
-  | LoginFailure Error
-  | LoginSuccess { username :: String }
-  | LoadDashboardRequest
-  | LoadDashboardSuccess
-  | LoadDashboardFailure Error
+import Example.Types (GlobalState, Action(..))
 
 saga :: ∀ eff. Saga (console :: CONSOLE | eff) Action GlobalState Unit
 saga = void do
+  -- log all actions as they come through
+  void $ fork $ forever $ take $ pure <<< traceAnyA
+
+  -- fork the eternal login flow
   fork loginFlow
 
   where
   loginFlow = forever do
     take case _ of
-      LoginRequest { username, password } -> pure do
+
+      LoginRequest { username, password } -> pure $ void $ fork do
         liftAff $ Console.log $ "Logging in as " <> show username
         liftAff $ delay $ 1000.0 # Milliseconds
         if username == "admin" && password == "password"
@@ -54,6 +47,16 @@ saga = void do
             put $ LoginSuccess { username }
             void postLoginFlow
           else put $ LoginFailure $ error "Authentication failed"
+
+      LoadDashboardRequest -> pure $ void $ fork do
+        liftAff $ Console.log $ "Loading dashboard..."
+        result <- liftAff $ attempt do
+          { response: (r :: Json) } <- liftAff $ Affjax.get "https://jsonplaceholder.typicode.com/users"
+          traceAnyA r
+          pure unit -- TODO
+        case result of
+          Right result -> put $ LoadDashboardSuccess
+          Left error -> put $ LoadDashboardFailure error
       _ -> Nothing
 
   postLoginFlow = do
@@ -68,6 +71,8 @@ mkStore = Redux.createStore reducer initialState (middlewareEnhancer <<< reduxDe
   initialState = { isLoggingIn: false
                  , loginError: Nothing
                  , loggedInAs: Nothing
+                 , isLoadingDashboard: false
+                 , dashboardLoadingError: Nothing
                  }
 
   reduxDevtoolsExtensionEnhancer' :: Redux.Enhancer _ Action GlobalState
@@ -93,6 +98,18 @@ mkStore = Redux.createStore reducer initialState (middlewareEnhancer <<< reduxDe
               , loggedInAs = Just { username }
               , loginError = Nothing
               }
+      LoadDashboardRequest ->
+        state { isLoadingDashboard = true
+              , dashboardLoadingError = Nothing
+              }
+      LoadDashboardSuccess ->
+        state { isLoadingDashboard = false
+              , dashboardLoadingError = Nothing
+              }
+      LoadDashboardFailure error ->
+        state { isLoadingDashboard = false
+              , dashboardLoadingError = Just error
+              }
       _ -> state
 
 type LocalState = { username :: String, password :: String }
@@ -102,104 +119,19 @@ appClass = Redux.createClass' id $ Redux.spec' render
 
   where
   render :: Redux.Render _ _ _ (Eff _) _
-  render dispatch this = do
-    DOM.div [ Props.className "container" ] <<< pure <$> do
-      render' <$> React.getProps this
-
+  render dispatch this = render' <$> React.getProps this
     where
     render' :: GlobalState -> ReactElement
-    render' { loggedInAs: Just { username } } = dashboard username
-    render' _ = loginScreen
-
-dashboard :: String -> ReactElement
-dashboard username = Redux.createElement dashboardClass { username } []
-
-type DashboardProps = { username :: String }
-dashboardClass :: ∀ props. Redux.ReduxReactClass props DashboardProps DashboardProps
-dashboardClass = Redux.createClass second $
-  let spec = Redux.spec' render
-   in spec { componentDidMount = componentDidMount }
-
-  where
-  componentDidMount :: Redux.ComponentDidMount _ _ _ (Eff _) _
-  componentDidMount dispatch this = void do
-    dispatch $ pure $ LoadDashboardRequest
-
-  render :: Redux.Render _ _ _ (Eff _) _
-  render dispatch this = do
-    DOM.div [ Props.className "container" ] <<< pure <$> do
-      render' <$> React.getProps this
-
-    where
-    render' { username }
-      = DOM.div []
-          [ DOM.h3 [ Props.className "title is-3 has-text-centered" ]
-              [ DOM.text $ "Welcome back, " <> username <> "!" ]
-          ]
-
-loginScreen :: ReactElement
-loginScreen = Redux.createElement loginScreenClass [] []
-
-loginScreenClass :: ∀ props. Redux.ReduxReactClass GlobalState props GlobalState
-loginScreenClass = Redux.createClass first spec
-
-  where
-  spec :: Redux.Spec _ _ _ (Eff _) _
-  spec = Redux.spec (\_ _ -> pure { username: "admin", password: "password"}) render
-
-  render dispatch this =
-    render' <$> React.getProps this
-            <*> React.readState this
-
-    where
-    render' { isLoggingIn, loginError } state =
-      DOM.form
-        [ Props.className "box"
-        , Props.onSubmit $ \event -> do
-            void $ preventDefault event
-            { username, password } <- React.readState this
-            void $ dispatch $ pure $ LoginRequest { username, password }
-        ] $
-        [ DOM.h3 [ Props.className "title is-5" ]
-            [ DOM.text "Please login:" ]
-        , DOM.div [ Props.className "field" ] [
-            DOM.input [ Props.value state.username
-                      , Props.placeholder "username"
-                      , Props.className "input"
-                      , Props._type "text"
-                      , Props.onChange \event ->
-                          let text = (unsafeCoerce event).target.value
-                           in React.transformState this (_{ username = text })
-                      ] []
-          ]
-        , DOM.div [ Props.className "field" ] [
-            DOM.input [ Props.value state.password
-                      , Props.placeholder "password"
-                      , Props.className "input"
-                      , Props._type "password"
-                      , Props.onChange \event ->
-                          let text = (unsafeCoerce event).target.value
-                           in React.transformState this (_{ password = text })
-                      ] []
-          ]
-        , DOM.div [ Props.className "field" ] $ [
-            DOM.button [ Props.value "login"
-                       , Props.className $ "button is-primary "
-                          <> if isLoggingIn
-                              then "is-loading"
-                              else ""
-                       , Props.disabled $ foldl (||) false
-                          [ isLoggingIn
-                          , S.null $ S.trim state.username
-                          , S.null $ S.trim state.password
-                          ]
-                      ] [ DOM.text "Submit" ]
-            ] <> case loginError of
-                  Nothing -> []
-                  Just _ -> pure do
-                    DOM.div [ Props.className "help is-danger" ]
-                      [ DOM.text "Authentication failed. Please try again." ]
-        ]
+    render' { loggedInAs } = renderIn DOM.div' do
+      div
+        ! Props.className "container"
+        $ do
+          div
+            ! Props.className "title is-6"
+            $ text "purescript-redux-saga demo"
+          case loggedInAs of
+            Nothing -> element login
+            Just { username } -> element $ dashboard username
 
 main :: Eff _ ReactElement
 main = do
