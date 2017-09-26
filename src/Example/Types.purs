@@ -1,11 +1,12 @@
 module Example.Types where
 
 import Prelude
+
+import Control.Monad.Eff.Exception (Error)
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode.Combinators ((.?))
-
 import Data.Maybe (Maybe)
-import Control.Monad.Eff.Exception (Error)
+import Debug.Trace (traceAnyA)
 
 type GlobalState =
   { isLoggingIn :: Boolean
@@ -24,12 +25,16 @@ data Action
   | LoadDashboardFailure Error
   | LoadDashboardSuccess { users :: Array User }
 
-newtype User = User { id :: String, username :: String, email :: String }
+newtype User
+  = User { id :: Int
+         , username :: String
+         , email :: String
+         }
 
 instance decodeJsonUser :: DecodeJson User where
-  decodeJson j = decodeJson j >>= \m -> do
+  decodeJson json = decodeJson json >>= \o -> do
     User <$> do
       { id: _, username: _, email: _ }
-        <$> m .? "id"
-        <*> m .? "username"
-        <*> m .? "email"
+        <$> o .? "id"
+        <*> o .? "username"
+        <*> o .? "email"
