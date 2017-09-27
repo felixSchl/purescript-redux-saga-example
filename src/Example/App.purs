@@ -27,7 +27,7 @@ import React.DOM as DOM
 import React.DOM.Props as Props
 import React.Redux as Redux
 import React.Spaces (SpaceM, element, renderIn, text, (!), (^))
-import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span, form, button, code, i)
+import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span, form, button, code, i, a)
 
 import Example.Store (mkStore)
 
@@ -43,9 +43,11 @@ appClass = Redux.createClass' id $ Redux.spec' render
       div
         ! Props.className "container"
         $ do
-          div
-            ! Props.className "title is-6"
-            $ text "purescript-redux-saga demo"
+          div ! Props.className "title is-6"
+            $ do
+                text "purescript-redux-saga demo - "
+                a ! Props.href "https://github.com/felixschl/purescript-redux-saga"
+                  $ text "https://github.com/felixschl/purescript-redux-saga"
           case loggedInAs of
             Nothing -> element login
             Just { username } -> element $ dashboard username
