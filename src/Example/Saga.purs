@@ -17,7 +17,7 @@ import Network.HTTP.Affjax as Affjax
 import Prelude hiding (div)
 import Redux.Saga
 
-saga :: ∀ eff. Saga (console :: CONSOLE | eff) Action GlobalState Unit
+saga :: Saga Action GlobalState Unit
 saga = void do
   -- log all actions as they come through
   void $ fork $ forever $ take $ pure <<< traceAnyA

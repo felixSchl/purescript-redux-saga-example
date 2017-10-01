@@ -1,6 +1,5 @@
 module Example.App (main) where
 
-import Debug.Trace
 import Redux.Saga
 
 import Control.Monad.Aff (delay, attempt)

@@ -6,7 +6,6 @@ import Control.Monad.Eff.Exception (Error)
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode.Combinators ((.?))
 import Data.Maybe (Maybe)
-import Debug.Trace (traceAnyA)
 
 type GlobalState =
   { isLoggingIn :: Boolean
