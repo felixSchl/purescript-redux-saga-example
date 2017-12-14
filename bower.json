@@ -8,11 +8,16 @@
   "dependencies": {
     "purescript-console": "^3.0.0",
     "purescript-js-timers": "^3.0.0",
-    "purescript-react-redux": "^5.1.0",
-    "purescript-redux-saga": "^0.1.0",
+    "purescript-react-redux": "^6.0.0",
+    "purescript-react": "^4.0.0",
     "purescript-react-spaces": "^0.5.0",
-    "purescript-affjax": "^4",
+    "purescript-aff": "^4.0.0",
+    "purescript-affjax": "^5.0.0",
     "purescript-argonaut-codecs": "^3.2.0",
     "purescript-debug": "^3.0.0"
+  },
+  "resolutions": {
+    "purescript-react": "^4.0.0",
+    "purescript-record": "850360dbfa1bf765a19b3ec207a706622fa47ac7"
   }
 }

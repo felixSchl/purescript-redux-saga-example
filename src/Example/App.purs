@@ -1,5 +1,6 @@
 module Example.App (main) where
 
+import Prelude hiding (div)
 import Redux.Saga
 
 import Control.Monad.Aff (delay, attempt)
@@ -17,9 +18,9 @@ import Data.Maybe (Maybe(..))
 import Data.Time.Duration (Milliseconds(..))
 import Example.Screens.Dashboard (dashboard)
 import Example.Screens.Login (login)
-import Example.Types (GlobalState, Action(..), User(User))
+import Example.Store (mkStore)
+import Example.Types (Action(..), User(User), GlobalState)
 import Network.HTTP.Affjax as Affjax
-import Prelude hiding (div)
 import React (ReactElement, preventDefault)
 import React as React
 import React.DOM as DOM
@@ -28,16 +29,17 @@ import React.Redux as Redux
 import React.Spaces (SpaceM, element, renderIn, text, (!), (^))
 import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span, form, button, code, i, a)
 
-import Example.Store (mkStore)
-
-appClass :: ∀ props. Redux.ReduxReactClass' _ _
-appClass = Redux.createClass' id $ Redux.spec' render
+appClass :: Redux.ConnectClass GlobalState {} _ Action
+appClass = Redux.connect mapStateToProps mapDispatchToProps {} klass
 
   where
-  render :: Redux.Render _ _ _ (Eff _) _
-  render dispatch this = render' <$> React.getProps this
+  klass = React.createClass $ React.spec {} render
+
+  mapDispatchToProps _ _ = {}
+  mapStateToProps { loggedInAs } _ = { loggedInAs }
+
+  render this = render' <$> React.getProps this
     where
-    render' :: GlobalState -> ReactElement
     render' { loggedInAs } = renderIn DOM.div' do
       div
         ! Props.className "container"
@@ -54,4 +56,6 @@ appClass = Redux.createClass' id $ Redux.spec' render
 main :: Eff _ ReactElement
 main = do
   store <- mkStore
-  pure $ Redux.createProviderElement store appClass
+  pure $ Redux.createProviderElement store [
+    Redux.createElement_ appClass []
+  ]

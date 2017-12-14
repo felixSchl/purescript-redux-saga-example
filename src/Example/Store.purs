@@ -12,22 +12,17 @@ import Example.Types (GlobalState, Action)
 
 mkStore
   :: ∀ eff
-   . Eff _ (Redux.Store Action GlobalState)
-mkStore = Redux.createStore reducer initialState (middlewareEnhancer <<< reduxDevtoolsExtensionEnhancer')
+   . Eff _ (Redux.ReduxStore _ GlobalState Action)
+mkStore = Redux.createStore reducer initialState middlewareEnhancer
   where
   initialState :: GlobalState
   initialState = { isLoggingIn: false
                  , loginError: Nothing
-                 , loggedInAs: Nothing
+                 , loggedInAs: Just { username: "admin" }
                  , isLoadingDashboard: false
                  , dashboardLoadingError: Nothing
                  , dashboardLoadedUsers: []
                  }
 
-  reduxDevtoolsExtensionEnhancer' :: Redux.Enhancer _ Action GlobalState
-  reduxDevtoolsExtensionEnhancer' = Redux.fromEnhancerForeign reduxDevtoolsExtensionEnhancer
-
-  middlewareEnhancer :: Redux.Enhancer _ Action GlobalState
+  middlewareEnhancer :: Redux.ReduxStoreEnhancer _ GlobalState Action
   middlewareEnhancer = Redux.applyMiddleware [ sagaMiddleware saga ]
-
-foreign import reduxDevtoolsExtensionEnhancer :: ∀ action state. Redux.EnhancerForeign action state

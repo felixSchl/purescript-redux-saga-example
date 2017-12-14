@@ -4,60 +4,70 @@ module Example.Screens.Dashboard (
   , DashboardProps
   ) where
 
+import Example.Types
+import Prelude hiding (div)
+
 import Control.Monad.Eff (Eff)
 import Data.Foldable (foldl, for_)
-import Data.Lens (to)
 import Data.Maybe (isJust)
-import Data.Profunctor.Strong (first)
 import Data.String as S
 import Data.Tuple (uncurry)
-import Prelude hiding (div)
-import React (ReactElement, preventDefault)
+import React (ReactElement, getProps, preventDefault)
 import React as React
 import React.DOM as DOM
 import React.DOM.Props as Props
 import React.Redux as Redux
 import React.Spaces (SpaceM, element, renderIn, text, (!), (^))
-import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span,
-  form, button, code, i, table, thead, tbody, tr, th, td)
+import React.Spaces.DOM (code, div, h2, h3, h4, h5, input, label, small, span, form, button, code, i, table, thead, tbody, tr, th, td)
 import Unsafe.Coerce (unsafeCoerce)
-
-import Example.Types
 
 dashboard :: String -> ReactElement
 dashboard username = Redux.createElement dashboardClass { username } []
 
 type DashboardProps = { username :: String }
 
-dashboardClass :: ∀ props. Redux.ReduxReactClass GlobalState DashboardProps _
-dashboardClass = Redux.createClass mapStateToProps $
-  let spec = Redux.spec' render
-   in spec { componentDidMount = componentDidMount }
+dashboardClass :: Redux.ConnectClass GlobalState DashboardProps _ Action -- GlobalState DashboardProps _ Action
+dashboardClass = Redux.connect mapStateToProps mapDispatchToProps {} klass
 
   where
-  mapStateToProps = to $ uncurry go
-    where
-    go { isLoadingDashboard, dashboardLoadingError, dashboardLoadedUsers }
-       { username } = { isLoadingDashboard
-                      , dashboardLoadingError
-                      , username
-                      , dashboardLoadedUsers
-                      }
 
-  componentDidMount :: Redux.ComponentDidMount _ _ _ (Eff _) _
-  componentDidMount dispatch this = void do
-    dispatch $ pure $ LoadDashboardRequest
+  klass = React.createClass $
+            let spec = React.spec unit \this -> do
+                          render <$> React.getProps this
+             in spec { componentDidMount = componentDidMount }
 
-  render :: Redux.Render _ _ _ (Eff _) _
-  render dispatch this = render' <$> React.getProps this
-    where
-    render' { username
-            , isLoadingDashboard
-            , dashboardLoadingError
-            , dashboardLoadedUsers
-            }
+  mapDispatchToProps dispatch _
+    = { logout: void $ dispatch LogoutRequest
+      , loadDashboard: void $ dispatch LoadDashboardRequest
+      }
+
+  mapStateToProps { isLoadingDashboard
+                  , dashboardLoadingError
+                  , dashboardLoadedUsers
+                  } { username }
+    = { isLoadingDashboard
+      , dashboardLoadingError
+      , dashboardLoadedUsers
+      , username
+      }
+
+  componentDidMount this = do
+    { loadDashboard } <- React.getProps this
+    loadDashboard
+
+  render { username
+         , isLoadingDashboard
+         , dashboardLoadingError
+         , dashboardLoadedUsers
+         , logout
+         }
       = renderIn DOM.div' do
         div $ do
+          button
+            ! Props.className "button is-pulled-right is-primary"
+            ! Props.onClick (const logout)
+            $ do
+               text $ "log out"
           h3
             ! Props.className "title is-3 has-text-centered"
             $ do

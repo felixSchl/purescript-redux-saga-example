@@ -1,12 +1,14 @@
 module Example.Reducer where
 
 import Prelude
-import React.Redux as Redux
+
 import Data.Maybe (Maybe(..))
+import Data.Newtype (wrap)
 import Example.Types (Action(..), GlobalState(..))
+import React.Redux as Redux
 
 reducer :: Redux.Reducer Action GlobalState
-reducer = flip go
+reducer = wrap $ flip go
   where
   go state = case _ of
     LoginRequest _ ->
@@ -34,5 +36,10 @@ reducer = flip go
     LoadDashboardFailure error ->
       state { isLoadingDashboard = false
             , dashboardLoadingError = Just error
+            }
+    LogoutRequest ->
+      state { isLoggingIn = false
+            , loginError = Nothing
+            , loggedInAs = Nothing
             }
     _ -> state

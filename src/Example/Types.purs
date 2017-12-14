@@ -18,6 +18,7 @@ type GlobalState =
 
 data Action
   = LoginRequest { username :: String, password :: String }
+  | LogoutRequest
   | LoginFailure Error
   | LoginSuccess { username :: String }
   | LoadDashboardRequest
